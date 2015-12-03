@@ -37,26 +37,3 @@ iex(1)> patches = Diff.diff("test", "taste")
 iex(2)> Diff.patch("test", patches)
 "taste"
 ```
-
-## Diff.format
-
-Compares 2 binaries or takes a list of patches and returns a binary ansi formatted for display
-
-By default, unchanged binary parts are displayed in the default color, deletes are shown in red, and inserts are shown in green. You can also customize the formatting
-
-Usage:
-
-```elixir
-iex(1)> Diff.format("test", "taste")
-[[[[[[[[[[[[[[[[[] | "\e[39m"] | "\e[22m"], "t"] | "\e[31m"] | "\e[1m"], "e"] |
-          "\e[32m"] | "\e[1m"], "a"] | "\e[39m"] | "\e[22m"], "st"] |
-    "\e[32m"] | "\e[1m"], "e"] | "\e[0m"]
-    
-iex(2)> Diff.format("test", "taste") |> IO.puts
-teaste
-:ok
-
-iex(3) Diff.format("test", "taste", [:default_color, :normal], [:green, :bright], [:red, :bright]) |> IO.puts
-teaste
-:ok
-```
