@@ -31,7 +31,7 @@ defmodule Diff.String.Test do
     changed = "taste"
 
     patches = Diff.diff(original, changed)
-    assert Diff.patch(original, patches) == changed
+    assert Diff.patch(original, patches, &Enum.join/1) == changed
   end
 
   test "ignores properly" do

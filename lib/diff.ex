@@ -1,10 +1,9 @@
 defmodule Diff do
   alias Diff.Matrix
-
+  alias Diff.Diffable
   @moduledoc """
-  Functions for performing diffs on two binaries
+  Functions for performing diffs
   """
-
 
   defmodule Insert do
     defstruct [:element, :index, :length]
@@ -27,10 +26,43 @@ defmodule Diff do
   end
 
   @doc """
-  Applies the patches from a previous diff to the given string
+  Applies the patches from a previous diff to the given string.
+  Will return the patched version as a list unless a from_list_fn/1 is supplied.
+  This function will takes the patched list as input and outputs the result.
   """
-  def patch(original, patches) do
-    Diff.Diffable.patch(original, patches)
+  def patch(original, patches, from_list_fn \\ fn(list) -> list end) do
+    original = Diffable.to_list(original)
+
+    Enum.reduce(patches, original, fn(patch, changed) ->
+      do_patch(changed, patch)
+    end)
+    |> from_list_fn.()
+  end
+
+  defp do_patch(original, %Diff.Insert{element: element, index: index}) do
+    { left, right } = Enum.split(original, index)
+    left ++ element ++ right
+  end
+
+  defp do_patch(original, %Diff.Delete{ element: _, index: index, length: length }) do
+    { left, deleted } = Enum.split(original, index)
+    { _, right } = Enum.split(deleted, length)
+    left ++ right
+  end
+
+  defp do_patch(original, %Diff.Modified{element: element, old_element: _, index: index, length: length}) do
+    { left, deleted } = Enum.split(original, index)
+    { _, right } = Enum.split(deleted, length)
+    left ++ element ++ right
+  end
+
+  defp do_patch(original, %Diff.Unchanged{}) do
+    original
+  end
+
+  defp do_patch(original, %Diff.Ignored{element: element, index: index}) do
+    { left, right } = Enum.split(original, index)
+    left ++ element ++ right
   end
 
   @doc"""
@@ -41,8 +73,8 @@ defmodule Diff do
   * `ignore` - Takes a regex and ignores matches
   """
   def diff(original, changed, options \\ []) do
-    original = Diff.Diffable.to_list(original)
-    changed = Diff.Diffable.to_list(changed)
+    original = Diffable.to_list(original)
+    changed = Diffable.to_list(changed)
 
     original_length = length(original)
     changed_length = length(changed)
