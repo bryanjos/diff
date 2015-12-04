@@ -24,16 +24,26 @@ iex(1)> Diff.diff("test", "taste")
 
 ## Diff.patch
 
-Applies the given patches to the binary
+Applies the given patches to the binary. Takes an optional third parameter to turn
+the patched list created from applying the patches back into the type needed.
 
 
 Usage:
+```elixir
+iex(1)> patches = Diff.diff([1, 2, 3, 4], [1, 5, 6, 4, 8])
+[%Diff.Modified{element: [5, 6], index: 1, length: 2, old_element: [2, 3]},
+ %Diff.Insert{element: '\b', index: 4, length: 1}]
+
+iex(2)> Diff.patch([1, 2, 3, 4], patches)
+[1, 5, 6, 4, 8]
+```
+
 
 ```elixir
 iex(1)> patches = Diff.diff("test", "taste")
 [%Diff.Modified{index: 1, length: 1, old_element: ["e"], element: ["a"]},
 %Diff.Insert{index: 4, length: 1, element: ["e"]}]
 
-iex(2)> Diff.patch("test", patches)
+iex(2)> Diff.patch("test", patches, &Enum.join/1)
 "taste"
 ```

@@ -2,7 +2,7 @@ defmodule Diff do
   alias Diff.Matrix
   alias Diff.Diffable
   @moduledoc """
-  Functions for performing diffs
+  Functions for performing diffs.
   """
 
   defmodule Insert do
