@@ -1,12 +1,12 @@
 Diff
 ====
 
-A diff library in Elixir
+A simple diff library in Elixir
 
 
 ## Diff.diff
 
-Compares 2 binaries and returns a list of changes from the first given binary with the second
+Compares 2 terms that have an implementation of the `Diff.Diffable` protocol and returns a list of changes from the first given binary with the second
 
 The diff function can take the following options:
 
@@ -24,7 +24,7 @@ iex(1)> Diff.diff("test", "taste")
 
 ## Diff.patch
 
-Applies the given patches to the binary. Takes an optional third parameter to turn
+Applies the given patches to the term. Takes an optional third parameter to turn
 the patched list created from applying the patches back into the type needed.
 
 
@@ -47,3 +47,7 @@ iex(1)> patches = Diff.diff("test", "taste")
 iex(2)> Diff.patch("test", patches, &Enum.join/1)
 "taste"
 ```
+
+
+`Diff.diff` and `Diff.patch` both take as a first parameter a term that has an implementation of the `Diff.Diffable` protocol.
+By default one exist for `BitString` and `List`

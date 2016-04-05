@@ -1,4 +1,5 @@
 defmodule Diff.Matrix do
+  @moduledoc false
 
   def new(rows, columns) do
     List.duplicate(List.duplicate(0, columns), rows)
@@ -8,11 +9,11 @@ defmodule Diff.Matrix do
     list = Enum.fetch!(matrix, i)
     Enum.fetch!(list, j)
   end
-  
+
   def put(matrix, i, j, new_value) do
     list = Enum.fetch!(matrix, i)
     list = List.update_at(list, j, fn(_) -> new_value end)
-    List.update_at(matrix, i,  fn(_) -> list end) 
+    List.update_at(matrix, i,  fn(_) -> list end)
   end
 
 end
