@@ -41,16 +41,23 @@ defmodule Diff do
 
   defp do_patch(original, %Diff.Insert{element: element, index: index}) do
     { left, right } = Enum.split(original, index)
-    left ++ element ++ right
+    _return = left ++ element ++ right
   end
 
-  defp do_patch(original, %Diff.Delete{ element: _, index: index, length: length }) do
+  defp do_patch(original, %Diff.Delete{ element: element, index: index,
+                                        length: length }) do
     { left, deleted } = Enum.split(original, index)
-    { _, right } = Enum.split(deleted, length)
-    left ++ right
+    { actuallydeleted, right } = Enum.split(deleted, length)
+    case element do
+      ^actuallydeleted ->
+        _return = left ++ right
+      other ->
+        exit("failed delete")
+    end
   end
 
-  defp do_patch(original, %Diff.Modified{element: element, old_element: _, index: index, length: length}) do
+  defp do_patch(original, %Diff.Modified{element: element, old_element: _,
+                                         index: index, length: length}) do
     { left, deleted } = Enum.split(original, index)
     { _, right } = Enum.split(deleted, length)
     left ++ element ++ right
@@ -85,12 +92,15 @@ defmodule Diff do
   end
 
   defp longest_common_subsequence(x, y, x_length, y_length) do
+
     matrix = Matrix.new(x_length + 1, y_length + 1)
 
-    matrix = Enum.reduce(1..x_length, matrix, fn(i, matrix) ->
+    # a reduction over a 2D array requires a closure inside an anonymous function
+    # sorry but there is nothing to be done about that
+    rowreductionFn = fn(i, matrix) ->
 
-      Enum.reduce(1..y_length, matrix, fn(j, matrix) ->
-
+      # setup the second closure
+      columnreductionFn = fn(j, matrix) ->
       if Enum.fetch!(x, i-1) == Enum.fetch!(y, j-1) do
         value = Matrix.get(matrix, i-1, j-1)
         Matrix.put(matrix, i, j, value + 1)
@@ -100,89 +110,114 @@ defmodule Diff do
 
         Matrix.put(matrix, i, j, max(original_value, changed_value))
       end
+      end
 
-      end)
+      Enum.reduce(1..y_length, matrix, columnreductionFn)
 
-    end)
+    end
 
-    matrix
+    _matrix = Enum.reduce(1..x_length, matrix, rowreductionFn)
+
   end
 
   defp build_diff(matrix, x, y, i, j, edits, options) do
     cond do
       i > 0 and j > 0 and Enum.fetch!(x, i-1) == Enum.fetch!(y, j-1) ->
-      if Dict.get(options, :keep_unchanged, false) do
-        edits = edits ++ [{:unchanged, Enum.fetch!(x, i-1), i-1}]
-      end
-
-        build_diff(matrix, x, y, i-1, j-1, edits, options)
+        newedits = if Dict.get(options, :keep_unchanged, false) do
+            edits ++ [{:unchanged, Enum.fetch!(x, i-1), i-1}]
+          else
+            edits
+          end
+        build_diff(matrix, x, y, i-1, j-1, newedits, options)
       j > 0 and (i == 0 or Matrix.get(matrix, i, j-1) >= Matrix.get(matrix,i-1, j)) ->
-        build_diff(matrix, x, y, i, j-1, edits ++ [{:insert, Enum.fetch!(y, j-1), j-1}], options)
+        newedit = {:insert, Enum.fetch!(y, j-1), j-1}
+        build_diff(matrix, x, y, i, j-1, edits ++ [newedit], options)
       i > 0 and (j == 0 or Matrix.get(matrix, i, j-1) < Matrix.get(matrix, i-1, j)) ->
-        build_diff(matrix, x, y, i-1, j, edits ++ [{:delete, Enum.fetch!(x, i-1), i-1}], options)
+        newdelete = {:delete, Enum.fetch!(x, i-1), j}
+        build_diff(matrix, x, y, i-1, j, edits ++ [newdelete], options)
       true ->
         edits |> Enum.reverse
     end
   end
 
   defp build_changes(edits, options) do
-    Enum.reduce(edits, [], fn({type, char, index}, changes) ->
+
+    # we now have a set of individual letter changes
+    # but if there is a series of inserts or deletes then
+    # we need to reduce them into single multichar changes
+    mergeindividualchangesFn = fn({type, char, index} = params, changes) ->
       if changes == [] do
-        changes ++ [change(type, char, index)]
+        changes ++ [make_change(type, char, index)]
       else
         change = List.last(changes)
         regex = Dict.get(options, :ignore)
-
         cond do
           regex && Regex.match?(regex, char) ->
-            changes ++ [change(:ignored, char, index)]
-          is_type(change, type) && index == (change.index + change.length) ->
-            change = %{change | element: change.element ++ [char], length: change.length + 1 }
-
-            if regex && Regex.match?(regex, Enum.join(change.element)) do
-              change = %Ignored{ element: change.element, index: change.index, length: change.length }
-            end
-
+            changes ++ [make_change(:ignored, char, index)]
+            # one branch for deletes
+            is_type(change, type) && type == :delete && index == change.index ->
+            change = if regex && Regex.match?(regex, Enum.join(change.element)) do
+                %Ignored{ element: change.element, index: change.index,
+                          length: change.length }
+              else
+                %{change | element: change.element ++ [char], length:
+                  change.length + 1 }
+              end
+            List.replace_at(changes, length(changes)-1, change)
+            # a different branch for everyone else
+            is_type(change, type) && type != :delete && index == (change.index + change.length) ->
+            change = if regex && Regex.match?(regex, Enum.join(change.element)) do
+                %Ignored{ element: change.element, index: change.index,
+                          length: change.length }
+              else
+                %{change | element: change.element ++ [char], length:
+                  change.length + 1 }
+              end
             List.replace_at(changes, length(changes)-1, change)
           true ->
-           changes ++ [change(type, char, index)]
-
+            changes ++ [make_change(type, char, index)]
         end
       end
+    end
 
-
-      end)
-
-      |> Enum.reduce([], fn(x, changes) ->
+    # if we change a single letter it will be a consecutive delete/insert
+    # this reduction merges them into a single modified statement
+    makemodifiedFn = fn(x, changes) ->
       if changes == [] do
         [x]
       else
         last_change = List.last(changes)
-
-        if is_type(last_change, :delete) and is_type(x, :insert) and last_change.index == x.index and last_change.length == x.length do
-          last_change = %Modified{ element: x.element, old_element: last_change.element, index: x.index, length: x.length }
+        if is_type(last_change, :delete)
+        and is_type(x, :insert)
+        and last_change.index == x.index
+        and last_change.length == x.length do
+          last_change = %Modified{ element: x.element, old_element: last_change.element,
+                                   index: x.index, length: x.length }
           List.replace_at(changes, length(changes) - 1, last_change)
         else
           changes ++ [x]
         end
       end
-      end)
+    end
+
+    # Now do both these sets of reduction on the edits
+    Enum.reduce(edits, [], mergeindividualchangesFn)
+    |> Enum.reduce([], makemodifiedFn)
   end
 
-
-  defp change(:insert, char, index) do
+  defp make_change(:insert, char, index) do
     %Insert{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:delete, char, index) do
+  defp make_change(:delete, char, index) do
     %Delete{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:unchanged, char, index) do
+  defp make_change(:unchanged, char, index) do
     %Unchanged{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:ignored, char, index) do
+  defp make_change(:ignored, char, index) do
     %Ignored{ element: [char], index: index, length: 1 }
   end
 
