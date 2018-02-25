@@ -25,51 +25,79 @@ defmodule Diff do
     defstruct [:element, :index, :length]
   end
 
+  @doc"""
+  Applies with patches with supplied annotation (top and tail)
+  This is used to generate visual diffs, etc
+  Shares the same code as patch
+  """
+  def annotated_patch(original, patches, annotations, from_list_fn \\ fn(list) -> list end) do
+    apply_patches(original, patches, annotations, from_list_fn)
+  end
+
   @doc """
   Applies the patches from a previous diff to the given string.
   Will return the patched version as a list unless a from_list_fn/1 is supplied.
   This function will takes the patched list as input and outputs the result.
   """
   def patch(original, patches, from_list_fn \\ fn(list) -> list end) do
+    apply_patches(original, patches, [], from_list_fn)
+  end
+
+  defp apply_patches(original, patches, annotations, from_list_fn) do
     original = Diffable.to_list(original)
 
-    Enum.reduce(patches, original, fn(patch, changed) ->
-      do_patch(changed, patch)
-    end)
-    |> from_list_fn.()
+    patchfn = fn(patch, {increment, changed}) ->
+      do_patch({increment, changed}, patch, annotations)
+    end
+
+    increment = 0
+    {_, returnlist} = Enum.reduce(patches, {increment, original}, patchfn)
+    from_list_fn.(returnlist)
   end
 
-  defp do_patch(original, %Diff.Insert{element: element, index: index}) do
-    { left, right } = Enum.split(original, index)
-    _return = left ++ element ++ right
+  defp do_patch({incr, original}, %Diff.Insert{element: element, index: index},
+    annotations) do
+    { left, right } = Enum.split(original, index + incr)
+    {newelement, newincr} = annotate(element, :insert, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
-  defp do_patch(original, %Diff.Delete{ element: element, index: index,
-                                        length: length }) do
-    { left, deleted } = Enum.split(original, index)
+  defp do_patch({incr, original}, %Diff.Delete{ element: element, index: index,
+                                        length: length }, annotations) do
+    { left, deleted } = Enum.split(original, index + incr)
     { actuallydeleted, right } = Enum.split(deleted, length)
     case element do
       ^actuallydeleted ->
-        _return = left ++ right
-      other ->
+        {newelement, newincr} = annotate(element, :deleted, annotations, incr)
+        return = left ++ newelement ++ right
+        {newincr, return}
+      _other ->
         exit("failed delete")
     end
   end
 
-  defp do_patch(original, %Diff.Modified{element: element, old_element: _,
-                                         index: index, length: length}) do
-    { left, deleted } = Enum.split(original, index)
+  defp do_patch({incr, original},
+    %Diff.Modified{ element: element, old_element: _,
+                    index: index, length: length},
+    annotations) do
+    { left, deleted } = Enum.split(original, index + incr)
     { _, right } = Enum.split(deleted, length)
-    left ++ element ++ right
+    {newelement, newincr} = annotate(element, :modified, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
-  defp do_patch(original, %Diff.Unchanged{}) do
-    original
+  defp do_patch({incr, original}, %Diff.Unchanged{}, _annotations) do
+    {incr, original}
   end
 
-  defp do_patch(original, %Diff.Ignored{element: element, index: index}) do
-    { left, right } = Enum.split(original, index)
-    left ++ element ++ right
+  defp do_patch({incr, original}, %Diff.Ignored{element: element, index: index},
+    annotations) do
+    { left, right } = Enum.split(original, index + incr)
+    {newelement, newincr} = annotate(element, :ignored, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
   @doc"""
@@ -145,7 +173,7 @@ defmodule Diff do
     # we now have a set of individual letter changes
     # but if there is a series of inserts or deletes then
     # we need to reduce them into single multichar changes
-    mergeindividualchangesFn = fn({type, char, index} = params, changes) ->
+    mergeindividualchangesFn = fn({type, char, index}, changes) ->
       if changes == [] do
         changes ++ [make_change(type, char, index)]
       else
@@ -239,6 +267,25 @@ defmodule Diff do
 
   defp is_type(_, _) do
     false
+  end
+
+  defp annotate(list, type, annotations, increment) do
+    annotation = for a <- annotations,
+      Map.get(a, type) != nil, do: Map.get(a, type)
+    case {type, annotation} do
+      {:deleted, []}           -> {[],   increment}
+      {_,        []}           -> {list, increment}
+      {:deleted, [annotation]} -> apply_deletion(list,   annotation, increment)
+      {_,        [annotation]} -> apply_annotation(list, annotation, increment)
+    end
+  end
+
+  defp apply_deletion(list, annotation, increment) do
+    {[annotation.before] ++ list ++ [annotation.after], increment + 2}
+  end
+
+  defp apply_annotation(list, annotation, increment) do
+    {[annotation.before] ++ list ++ [annotation.after], increment + 2}
   end
 
 end
