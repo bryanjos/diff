@@ -18,7 +18,8 @@ defmodule Diff.String.Test do
 
   test "returns changes when one character is modified" do
     results = Diff.diff("test", "tesr")
-    assert results == [%Diff.Modified{index: 3, length: 1, old_element: ["t"], element: ["r"]}]
+    assert results == [%Diff.Modified{index: 3, length: 1, old_element: ["t"],
+                                      element: ["r"]}]
   end
 
   test "returns changes when modified in the middle" do
@@ -46,7 +47,6 @@ defmodule Diff.String.Test do
     patches = Diff.diff(original, changed)
     assert Diff.patch(original, patches, &Enum.join/1) == changed
   end
-
 
   test "applies patches when one character is added" do
     original = "test"
