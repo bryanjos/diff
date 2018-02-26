@@ -48,6 +48,31 @@ iex(2)> Diff.patch("test", patches, &Enum.join/1)
 "taste"
 ```
 
+## Diff.annotated_patch
 
-`Diff.diff` and `Diff.patch` both take as a first parameter a term that has an implementation of the `Diff.Diffable` protocol.
+`Diff.annotated_patch` takes a a data structure of annotations, and uses them when applying the patch.
+
+Usage:
+```elixir
+iex(1)>  annotations =   [
+...(1)>     %{delete:   %{before: "<span class='deleted'>",
+...(1)>                   after:  "</span>"}},
+...(1)>     %{insert:   %{before: "<span class='inserted'>",
+...(1)>                   after:  "</span>"}},
+...(1)>     %{modified: %{before: "<span class='modified'>",
+...(1)>                   after:  "</span>"}}
+...(1)> ]
+[%{delete: %{after: "</span>", before: "<span class='deleted'>"}},
+ %{insert: %{after: "</span>", before: "<span class='inserted'>"}},
+ %{modified: %{after: "</span>", before: "<span class='modified'>"}}]
+iex(2)> patches = Diff.diff("test", "tast")
+[%Diff.Modified{element: ["a"], index: 1, length: 1, old_element: ["e"]}]
+iex(3)> Diff.annotated_patch("test", patches, annotations)
+iex(3)> Diff.annotated_patch("test", patches, annotations)
+["t", "<span class='modified'>", "a", "</span>", "s", "t"]
+```
+
+It takes the same optional join function as `Diff.patch` as you would expect
+
+`Diff.diff`, `Diff.patch` and `Diff.annotated_patch` all take as a first parameter a term that has an implementation of the `Diff.Diffable` protocol.
 By default one exist for `BitString` and `List`

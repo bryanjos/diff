@@ -25,44 +25,79 @@ defmodule Diff do
     defstruct [:element, :index, :length]
   end
 
+  @doc"""
+  Applies with patches with supplied annotation (top and tail)
+  This is used to generate visual diffs, etc
+  Shares the same code as patch
+  """
+  def annotated_patch(original, patches, annotations, from_list_fn \\ fn(list) -> list end) do
+    apply_patches(original, patches, annotations, from_list_fn)
+  end
+
   @doc """
   Applies the patches from a previous diff to the given string.
   Will return the patched version as a list unless a from_list_fn/1 is supplied.
   This function will takes the patched list as input and outputs the result.
   """
   def patch(original, patches, from_list_fn \\ fn(list) -> list end) do
+    apply_patches(original, patches, [], from_list_fn)
+  end
+
+  defp apply_patches(original, patches, annotations, from_list_fn) do
     original = Diffable.to_list(original)
 
-    Enum.reduce(patches, original, fn(patch, changed) ->
-      do_patch(changed, patch)
-    end)
-    |> from_list_fn.()
+    patchfn = fn(patch, {increment, changed}) ->
+      do_patch({increment, changed}, patch, annotations)
+    end
+
+    increment = 0
+    {_, returnlist} = Enum.reduce(patches, {increment, original}, patchfn)
+    from_list_fn.(returnlist)
   end
 
-  defp do_patch(original, %Diff.Insert{element: element, index: index}) do
-    { left, right } = Enum.split(original, index)
-    left ++ element ++ right
+  defp do_patch({incr, original}, %Diff.Insert{element: element, index: index},
+    annotations) do
+    { left, right } = Enum.split(original, index + incr)
+    {newelement, newincr} = annotate(element, :insert, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
-  defp do_patch(original, %Diff.Delete{ element: _, index: index, length: length }) do
-    { left, deleted } = Enum.split(original, index)
+  defp do_patch({incr, original}, %Diff.Delete{ element: element, index: index,
+                                        length: length }, annotations) do
+    { left, deleted } = Enum.split(original, index + incr)
+    { actuallydeleted, right } = Enum.split(deleted, length)
+    case element do
+      ^actuallydeleted ->
+        {newelement, newincr} = annotate(element, :deleted, annotations, incr)
+        return = left ++ newelement ++ right
+        {newincr, return}
+      _other ->
+        exit("failed delete")
+    end
+  end
+
+  defp do_patch({incr, original},
+    %Diff.Modified{ element: element, old_element: _,
+                    index: index, length: length},
+    annotations) do
+    { left, deleted } = Enum.split(original, index + incr)
     { _, right } = Enum.split(deleted, length)
-    left ++ right
+    {newelement, newincr} = annotate(element, :modified, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
-  defp do_patch(original, %Diff.Modified{element: element, old_element: _, index: index, length: length}) do
-    { left, deleted } = Enum.split(original, index)
-    { _, right } = Enum.split(deleted, length)
-    left ++ element ++ right
+  defp do_patch({incr, original}, %Diff.Unchanged{}, _annotations) do
+    {incr, original}
   end
 
-  defp do_patch(original, %Diff.Unchanged{}) do
-    original
-  end
-
-  defp do_patch(original, %Diff.Ignored{element: element, index: index}) do
-    { left, right } = Enum.split(original, index)
-    left ++ element ++ right
+  defp do_patch({incr, original}, %Diff.Ignored{element: element, index: index},
+    annotations) do
+    { left, right } = Enum.split(original, index + incr)
+    {newelement, newincr} = annotate(element, :ignored, annotations, incr)
+    return = left ++ newelement ++ right
+    {newincr, return}
   end
 
   @doc"""
@@ -85,12 +120,15 @@ defmodule Diff do
   end
 
   defp longest_common_subsequence(x, y, x_length, y_length) do
+
     matrix = Matrix.new(x_length + 1, y_length + 1)
 
-    matrix = Enum.reduce(1..x_length, matrix, fn(i, matrix) ->
+    # a reduction over a 2D array requires a closure inside an anonymous function
+    # sorry but there is nothing to be done about that
+    rowreductionFn = fn(i, matrix) ->
 
-      Enum.reduce(1..y_length, matrix, fn(j, matrix) ->
-
+      # setup the second closure
+      columnreductionFn = fn(j, matrix) ->
       if Enum.fetch!(x, i-1) == Enum.fetch!(y, j-1) do
         value = Matrix.get(matrix, i-1, j-1)
         Matrix.put(matrix, i, j, value + 1)
@@ -100,89 +138,114 @@ defmodule Diff do
 
         Matrix.put(matrix, i, j, max(original_value, changed_value))
       end
+      end
 
-      end)
+      Enum.reduce(1..y_length, matrix, columnreductionFn)
 
-    end)
+    end
 
-    matrix
+    _matrix = Enum.reduce(1..x_length, matrix, rowreductionFn)
+
   end
 
   defp build_diff(matrix, x, y, i, j, edits, options) do
     cond do
       i > 0 and j > 0 and Enum.fetch!(x, i-1) == Enum.fetch!(y, j-1) ->
-      if Dict.get(options, :keep_unchanged, false) do
-        edits = edits ++ [{:unchanged, Enum.fetch!(x, i-1), i-1}]
-      end
-
-        build_diff(matrix, x, y, i-1, j-1, edits, options)
+        newedits = if Dict.get(options, :keep_unchanged, false) do
+            edits ++ [{:unchanged, Enum.fetch!(x, i-1), i-1}]
+          else
+            edits
+          end
+        build_diff(matrix, x, y, i-1, j-1, newedits, options)
       j > 0 and (i == 0 or Matrix.get(matrix, i, j-1) >= Matrix.get(matrix,i-1, j)) ->
-        build_diff(matrix, x, y, i, j-1, edits ++ [{:insert, Enum.fetch!(y, j-1), j-1}], options)
+        newedit = {:insert, Enum.fetch!(y, j-1), j-1}
+        build_diff(matrix, x, y, i, j-1, edits ++ [newedit], options)
       i > 0 and (j == 0 or Matrix.get(matrix, i, j-1) < Matrix.get(matrix, i-1, j)) ->
-        build_diff(matrix, x, y, i-1, j, edits ++ [{:delete, Enum.fetch!(x, i-1), i-1}], options)
+        newdelete = {:delete, Enum.fetch!(x, i-1), j}
+        build_diff(matrix, x, y, i-1, j, edits ++ [newdelete], options)
       true ->
         edits |> Enum.reverse
     end
   end
 
   defp build_changes(edits, options) do
-    Enum.reduce(edits, [], fn({type, char, index}, changes) ->
+
+    # we now have a set of individual letter changes
+    # but if there is a series of inserts or deletes then
+    # we need to reduce them into single multichar changes
+    mergeindividualchangesFn = fn({type, char, index}, changes) ->
       if changes == [] do
-        changes ++ [change(type, char, index)]
+        changes ++ [make_change(type, char, index)]
       else
         change = List.last(changes)
         regex = Dict.get(options, :ignore)
-
         cond do
           regex && Regex.match?(regex, char) ->
-            changes ++ [change(:ignored, char, index)]
-          is_type(change, type) && index == (change.index + change.length) ->
-            change = %{change | element: change.element ++ [char], length: change.length + 1 }
-
-            if regex && Regex.match?(regex, Enum.join(change.element)) do
-              change = %Ignored{ element: change.element, index: change.index, length: change.length }
-            end
-
+            changes ++ [make_change(:ignored, char, index)]
+            # one branch for deletes
+            is_type(change, type) && type == :delete && index == change.index ->
+            change = if regex && Regex.match?(regex, Enum.join(change.element)) do
+                %Ignored{ element: change.element, index: change.index,
+                          length: change.length }
+              else
+                %{change | element: change.element ++ [char], length:
+                  change.length + 1 }
+              end
+            List.replace_at(changes, length(changes)-1, change)
+            # a different branch for everyone else
+            is_type(change, type) && type != :delete && index == (change.index + change.length) ->
+            change = if regex && Regex.match?(regex, Enum.join(change.element)) do
+                %Ignored{ element: change.element, index: change.index,
+                          length: change.length }
+              else
+                %{change | element: change.element ++ [char], length:
+                  change.length + 1 }
+              end
             List.replace_at(changes, length(changes)-1, change)
           true ->
-           changes ++ [change(type, char, index)]
-
+            changes ++ [make_change(type, char, index)]
         end
       end
+    end
 
-
-      end)
-
-      |> Enum.reduce([], fn(x, changes) ->
+    # if we change a single letter it will be a consecutive delete/insert
+    # this reduction merges them into a single modified statement
+    makemodifiedFn = fn(x, changes) ->
       if changes == [] do
         [x]
       else
         last_change = List.last(changes)
-
-        if is_type(last_change, :delete) and is_type(x, :insert) and last_change.index == x.index and last_change.length == x.length do
-          last_change = %Modified{ element: x.element, old_element: last_change.element, index: x.index, length: x.length }
+        if is_type(last_change, :delete)
+        and is_type(x, :insert)
+        and last_change.index == x.index
+        and last_change.length == x.length do
+          last_change = %Modified{ element: x.element, old_element: last_change.element,
+                                   index: x.index, length: x.length }
           List.replace_at(changes, length(changes) - 1, last_change)
         else
           changes ++ [x]
         end
       end
-      end)
+    end
+
+    # Now do both these sets of reduction on the edits
+    Enum.reduce(edits, [], mergeindividualchangesFn)
+    |> Enum.reduce([], makemodifiedFn)
   end
 
-
-  defp change(:insert, char, index) do
+  defp make_change(:insert, char, index) do
     %Insert{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:delete, char, index) do
+  defp make_change(:delete, char, index) do
     %Delete{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:unchanged, char, index) do
+  defp make_change(:unchanged, char, index) do
     %Unchanged{ element: [char], index: index, length: 1 }
   end
 
-  defp change(:ignored, char, index) do
+  defp make_change(:ignored, char, index) do
     %Ignored{ element: [char], index: index, length: 1 }
   end
 
@@ -204,6 +267,25 @@ defmodule Diff do
 
   defp is_type(_, _) do
     false
+  end
+
+  defp annotate(list, type, annotations, increment) do
+    annotation = for a <- annotations,
+      Map.get(a, type) != nil, do: Map.get(a, type)
+    case {type, annotation} do
+      {:deleted, []}           -> {[],   increment}
+      {_,        []}           -> {list, increment}
+      {:deleted, [annotation]} -> apply_deletion(list,   annotation, increment)
+      {_,        [annotation]} -> apply_annotation(list, annotation, increment)
+    end
+  end
+
+  defp apply_deletion(list, annotation, increment) do
+    {[annotation.before] ++ list ++ [annotation.after], increment + 2}
+  end
+
+  defp apply_annotation(list, annotation, increment) do
+    {[annotation.before] ++ list ++ [annotation.after], increment + 2}
   end
 
 end
