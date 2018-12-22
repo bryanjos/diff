@@ -151,7 +151,7 @@ defmodule Diff do
   defp build_diff(matrix, x, y, i, j, edits, options) do
     cond do
       i > 0 and j > 0 and Enum.fetch!(x, i-1) == Enum.fetch!(y, j-1) ->
-        newedits = if Dict.get(options, :keep_unchanged, false) do
+        newedits = if Keyword.get(options, :keep_unchanged, false) do
             edits ++ [{:unchanged, Enum.fetch!(x, i-1), i-1}]
           else
             edits
@@ -178,7 +178,7 @@ defmodule Diff do
         changes ++ [make_change(type, char, index)]
       else
         change = List.last(changes)
-        regex = Dict.get(options, :ignore)
+        regex = Keyword.get(options, :ignore)
         cond do
           regex && Regex.match?(regex, char) ->
             changes ++ [make_change(:ignored, char, index)]
