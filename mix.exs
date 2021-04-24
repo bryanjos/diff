@@ -2,34 +2,36 @@ defmodule Diff.Mixfile do
   use Mix.Project
 
   def project do
-    [app: :diff,
-     name: "Diff",
-     version: "1.1.0",
-     elixir: "~> 1.0",
-     description: description,
-     package: package,
-     source_url: "https://github.com/bryanjos/diff",
-     build_embedded: Mix.env == :prod,
-     start_permanent: Mix.env == :prod,
-     deps: deps]
+    [
+      app: :diff,
+      name: "Diff",
+      version: "1.1.0",
+      elixir: "~> 1.10",
+      description: description(),
+      package: package(),
+      source_url: "https://github.com/bryanjos/diff",
+      build_embedded: Mix.env() == :prod,
+      start_permanent: Mix.env() == :prod,
+      deps: deps()
+    ]
   end
 
   def application do
-    [applications: [:logger]]
+    [extra_applications: [:logger]]
   end
 
   defp deps do
     [
-      {:earmark, "~> 1.0", only: :dev },
-      {:ex_doc, "~> 0.18", only: :dev },
-      {:credo, "~> 0.8.0", only: :dev }
+      {:ex_doc, "~> 0.24", only: :dev},
+      {:credo, "~> 1.0", only: :dev},
+      {:stream_data, "~> 0.5", only: :test}
     ]
   end
 
   defp description do
-  """
-  A simple diff library
-  """
+    """
+    A simple diff library
+    """
   end
 
   defp package do

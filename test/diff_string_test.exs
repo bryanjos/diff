@@ -18,13 +18,15 @@ defmodule Diff.String.Test do
 
   test "returns changes when one character is modified" do
     results = Diff.diff("test", "tesr")
-    assert results == [%Diff.Modified{index: 3, length: 1, old_element: ["t"],
-                                      element: ["r"]}]
+    assert results == [%Diff.Modified{index: 3, length: 1, old_element: ["t"], element: ["r"]}]
   end
 
   test "returns changes when modified in the middle" do
     results = Diff.diff("test", "tart")
-    assert results == [%Diff.Modified{index: 1, length: 2, old_element: ["e", "s"], element: ["a", "r"]}]
+
+    assert results == [
+             %Diff.Modified{index: 1, length: 2, old_element: ["e", "s"], element: ["a", "r"]}
+           ]
   end
 
   test "ignores properly" do
@@ -99,7 +101,6 @@ defmodule Diff.String.Test do
 
   # bang a random test in see how she goes
   test "random stuff going on" do
-
     original = "sfjksfjk324m, b0 sdlkaj kdsf "
     changed = "iuw ewjnpjenjew o90ufdh ewnm2320y"
 
@@ -107,26 +108,15 @@ defmodule Diff.String.Test do
     assert Diff.patch(original, patches, &Enum.join/1) == changed
   end
 
-  # Fuzz test - generate random strings and check they all work
+  use ExUnitProperties
 
-  test "fuzz test" do
-    fuzz(1000)
+  property "Can create patches and then patch original" do
+    check all(
+            original <- binary(min_length: 50, max_length: 1000),
+            changed <- binary(min_length: 50, max_length: 1000)
+          ) do
+      patches = Diff.diff(original, changed)
+      assert Diff.patch(original, patches, &Enum.join/1) == changed
+    end
   end
-
-  defp fuzz(0) do
-    :ok
-  end
-
-  defp fuzz(n) when is_integer(n) and n > 0 do
-
-    no_of_chars = 100
-    offset   = :crypto.rand_uniform(0, no_of_chars)
-    sign     = :crypto.rand_uniform(0, 2) -1
-    original = :crypto.strong_rand_bytes(no_of_chars)
-    changed  = :crypto.strong_rand_bytes(no_of_chars + (offset * sign))
-    patches = Diff.diff(original, changed)
-    assert Diff.patch(original, patches, &Enum.join/1) == changed
-    fuzz(n - 1)
-  end
-
 end
