@@ -1,19 +1,25 @@
 defmodule Diff.Matrix do
   @moduledoc false
 
+  defstruct rows: nil, columns: nil, data: nil
+
   def new(rows, columns) do
-    List.duplicate(List.duplicate(0, columns), rows)
+    %__MODULE__{
+      rows: rows,
+      columns: columns,
+      data: %{}
+    }
   end
 
-  def get(matrix, i, j) do
-    list = Enum.fetch!(matrix, i)
-    Enum.fetch!(list, j)
+  def get(matrix, x, y) do
+    Map.get(matrix.data, {x, y}, 0)
   end
 
-  def put(matrix, i, j, new_value) do
-    list = Enum.fetch!(matrix, i)
-    list = List.update_at(list, j, fn(_) -> new_value end)
-    List.update_at(matrix, i,  fn(_) -> list end)
+  def put(matrix, x, y, value) do
+    %{matrix | data: Map.put(matrix.data, {x, y}, value)}
   end
 
+  def size(matrix) do
+    {matrix.rows, matrix.columns}
+  end
 end

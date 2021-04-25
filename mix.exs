@@ -24,7 +24,8 @@ defmodule Diff.Mixfile do
     [
       {:ex_doc, "~> 0.24", only: :dev},
       {:credo, "~> 1.0", only: :dev},
-      {:stream_data, "~> 0.5", only: :test}
+      {:stream_data, "~> 0.5", only: :test},
+      {:benchee, "~> 1.0", only: :dev}
     ]
   end
 
